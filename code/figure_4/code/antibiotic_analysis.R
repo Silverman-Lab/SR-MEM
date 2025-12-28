@@ -2,6 +2,8 @@ library(nlme)
 library(ALDEx3)
 library(dplyr)
 library(tidyr)
+library(RTMBdist)
+library(ggplot2)
 
 set.seed(654)
 
@@ -101,6 +103,51 @@ time_points <- unname(unlist(sapply(colnames(Y), function(item) {
 })))
 data$PatientID <- patient_ids
 data$time_point <- time_points
+
+
+##### MEM Modeling #####
+sparsity <- replicate(1000, {
+  pp <- t(rdirmult(length(colSums(Y)), colSums(Y), t(Y+0.5)))
+  colSums(pp==0)
+})
+sparsity_intervals <- apply(
+  sparsity, 1,
+  quantile, probs = c(0.025, 0.5, 0.975)
+)
+df_plot <- data.frame(
+  sample_name = colnames(Y==0),
+  observed = colSums(Y==0),
+  q025 = sparsity_intervals[1, ],
+  q50  = sparsity_intervals[2, ],
+  q975 = sparsity_intervals[3, ]
+)
+df_plot <- df_plot[sample(1:nrow(df_plot), 50), ]
+g <- ggplot(df_plot, aes(y = sample_name)) +
+  # predictive interval
+  geom_errorbar(
+    aes(xmin = q025, xmax = q975),
+    width = 0.2,
+    color = "gray40"
+  ) +
+  # predictive median
+  geom_point(
+    aes(x = q50),
+    size = 2,
+    color = "black"
+  ) +
+  # observed value
+  geom_point(
+    aes(x = observed),
+    color = "red",
+    size = 2
+  ) +
+  labs(
+    y = "Sample Name",
+    x = "Number of zero counts",
+    title = "Sparsity Posterior Predictive Antibiogram Dataset"
+  ) +
+  theme_bw()
+ggsave("../../../supplement/SFigure_8.png", g, units="in", width=6, height=6)
 
 ## Run ALDEx3
 formula <- as.formula(paste("~", paste(colnames(X), collapse=" + ")))

@@ -1,3 +1,4 @@
+source("maaslin3.R")
 library(ALDEx3)
 library(ANCOMBC)
 library(LinDA)
@@ -60,13 +61,39 @@ run_maaslin2 <- function(Y, X, fixed_effects, random_effects, normalization,
     return(fit.maaslin2)
 }
 
+run_maaslin3 <- function(Y, X, fixed_effects, formula, normalization,
+                         n.cores=2) {
+    fit.maaslin3 <- maaslin3(input_data=Y,
+                             input_metadata=X,
+			     formula=formula,
+			     median_comparison_abundance=T,
+			     median_comparison_prevalence=F,
+			     standardize=F,
+			     max_pngs=0,
+                             output="masslin3_output",
+                             normalization=normalization,
+                             cores=n.cores)
+    return(fit.maaslin3)
+}
+
+
+
 args <- commandArgs(trailingOnly=TRUE)
 file_name <- args[1]
 base_file <- tools::file_path_sans_ext(basename(file_name))
 sim_data <- readRDS(file_name)
 out_dir <- args[2]
 tp <- 1.3
-tp_s <- 0.25
+if(grepl("_0.2_", file_name)) {
+	tp_s <- 0.35
+} else {
+	tp_s <- 0.25
+}
+if(grepl("_-2.5_2.5_", file_name)) {
+	tp <- 0
+	tp_s <- 0.1
+}
+print(c( tp, tp_s))
 n.cores <- 2
 
 Y <- sim_data$Y

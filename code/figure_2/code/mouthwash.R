@@ -1,4 +1,5 @@
 library(ALDEx3)
+library(ggplot2)
 library(biomformat)
 library(phyloseq)
 library(nlme)
@@ -6,12 +7,14 @@ library(LinDA)
 library(DESeq2)
 library(ANCOMBC, lib.loc="~/local_R/")
 library(Maaslin2)
+library(maaslin3)
 library(lmerSeq)
 library(NBZIMM)
 library(dplyr)
 library(tidyr)
 library(lmerTest)
 library(xlsx)
+library(RTMBdist)
 
 ## Setup
 set.seed(564527)
@@ -138,6 +141,50 @@ meta_trim_filt$treat_timec <- interaction(meta_trim_filt$treat,
                                           meta_trim_filt$timec, drop = TRUE)
 
 ##### MEM Modeling #####
+colSums(Y_genus==0)
+sparsity <- replicate(1000, {
+  pp <- t(rdirmult(length(colSums(Y_genus)), colSums(Y_genus), t(Y_genus+0.5)))
+  colSums(pp==0)
+})
+sparsity_intervals <- apply(
+  sparsity, 1,
+  quantile, probs = c(0.025, 0.5, 0.975)
+)
+df_plot <- data.frame(
+  sample_name = colnames(Y_genus==0),
+  observed = colSums(Y_genus==0),
+  q025 = sparsity_intervals[1, ],
+  q50  = sparsity_intervals[2, ],
+  q975 = sparsity_intervals[3, ]
+)
+df_plot <- df_plot[sample(1:nrow(df_plot), 50), ]
+g <- ggplot(df_plot, aes(y = sample_name)) +
+  # predictive interval
+  geom_errorbar(
+    aes(xmin = q025, xmax = q975),
+    width = 0.2,
+    color = "gray40"
+  ) +
+  # predictive median
+  geom_point(
+    aes(x = q50),
+    size = 2,
+    color = "black"
+  ) +
+  # observed value
+  geom_point(
+    aes(x = observed),
+    color = "red",
+    size = 2
+  ) +
+  labs(
+    y = "Sample Name",
+    x = "Number of zero counts",
+    title = "Sparsity Posterior Predictive Mouthwash Dataset"
+  ) +
+  theme_bw()
+ggsave("../../../supplement/SFigure_6.png", g, units="in", width=6, height=6)
+
 
 ## SR-MEM
 scale_regression <- lme(log_scale~treat*timec,
@@ -195,6 +242,32 @@ qmp.res <- qmp.res %>%
   mutate(pval_adj=p.adjust(p.val, method="BH")) %>%
   ungroup()
 qmp.res <- data.frame(qmp.res)
+
+tdf <- data.frame(total=fc_live_cells)
+maaslin3.res <- maaslin3(input_data=Y_genus,
+                         input_metadata=meta_trim_filt[,c("treat", "timec", "participant_id")],
+                         formula="~treat*timec+(1|participant_id)",
+                         output="maaslin3",
+                         unscaled_abundance=tdf,
+                         median_comparison_abundance=F,
+                         median_comparison_prevalence=F,
+                         cores=6)
+maaslin3.res <- maaslin3.res$fit_data_abundance$results
+
+P_A <- apply(Y_genus, 2, function(col) log2((col+0.1)/sum(col+0.1)))
+P_B <- apply(Y_genus, 2, function(col) log2((col+2)/sum(col+2)))
+pepA <- P_A["g__Peptidiphaga",]
+data_A <- cbind(meta_trim_filt, pepA)
+lme4::lmer("pepA~treat*timec+(1|participant_id)", data=data_A)
+pepB <- P_B["g__Peptidiphaga",]
+data_B <- cbind(meta_trim_filt, pepB)
+lme4::lmer("pepB~treat*timec+(1|participant_id)", data=data_B)
+pepA <- P_A["g__Ottowia",]
+data_A <- cbind(meta_trim_filt, pepA)
+lme4::lmer("pepA~treat*timec+(1|participant_id)", data=data_A)
+pepB <- P_B["g__Ottowia",]
+data_B <- cbind(meta_trim_filt, pepB)
+lme4::lmer("pepB~treat*timec+(1|participant_id)", data=data_B)
 
 fn <- "../../../supplement/Fig2_Results.xlsx"
 ## Comparison Data
@@ -258,6 +331,15 @@ for(col in cols) {
   colnames(nbzimm.df) <- c("est", "padj", "method", "genus")
   all_res <- rbind(all_res, nbzimm.df)
 
+  maaslin3.df <- data.frame(maaslin3.res[maaslin3.res[,"name"]==col,])
+  row.names(maaslin3.df) <- maaslin3.df$feature
+  maaslin3.df <- maaslin3.df[,c("coef", "pval_joint")]
+  maaslin3.df$pval_joint <- p.adjust(maaslin3.df$pval_joint, method="BH")
+  maaslin3.df$method <- "maaslin3"
+  maaslin3.df$genus <- row.names(maaslin3.df)
+  colnames(maaslin3.df) <- c("est", "padj", "method", "genus")
+  all_res <- rbind(all_res, maaslin3.df)
+
   qmp.df <- qmp.res[qmp.res$row==col,]
   qmp.df <- data.frame(qmp.df[,c("Est", "pval_adj", "genus")])
   row.names(qmp.df) <- qmp.df$genus
@@ -282,9 +364,11 @@ for(col in cols) {
   )
   df_full <- df_full %>% mutate(method=dplyr::recode(method, aldex_mme='ALDEx2-MEM', linda='LinDA',
                                               qmp='QMP', nbzimm="NBZIMM", ancom_bc2="ANCOM-BC2",
-                                              lmerSeq='lmerSeq', aldex_mme_tp="ALDEx2-MEM-TP"))
+                                              lmerSeq='lmerSeq', aldex_mme_tp="ALDEx2-MEM-TP",
+                                              maaslin3="MaAsLin3"))
   df_full$method <- factor(df_full$method, levels=c("ALDEx2-MEM", "QMP", "LinDA", "lmerSeq",
-                                                    "NBZIMM", "ANCOM-BC2", "ALDEx2-MEM-TP"))
+                                                    "NBZIMM", "ANCOM-BC2", "ALDEx2-MEM-TP",
+                                                    "MaAsLin3"))
 
   df_full <- df_full[order(df_full$method, df_full$genus),]
   sparsity <- rowSums((Y_genus==0)/(ncol(Y_genus)))[df_full$genus]

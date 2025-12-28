@@ -30,6 +30,11 @@ if(model=="oral") {
   d <- SparseDOSSA2_m(template=vagina_model,
                     new_features=F,
                     n_sample=10000)
+} else if(model=="gut") {
+  gut_model = readRDS("gut.RDS")
+  d <- SparseDOSSA2_m(template=gut_model,
+	              new_features=F,
+	              n_sample=10000)
 }
 
 Y <- apply(d$simulated_matrices$rel, 2, function(col) rmultinom(1, seq_depth, col)) ## 100000
@@ -94,6 +99,13 @@ while(TRUE) {
 			    metadata_matrix=as.matrix(mat_metadata),
 			    spike_metadata=spike_in_df,
 			    n_sample=nrow(mat_metadata))
+	} else if(model=="gut") {
+	  gut_model = readRDS("gut.RDS")
+	  d <- SparseDOSSA2_m(template=gut_model,
+			      new_features=F,
+			      metadata_matrix=as.matrix(mat_metadata),
+			      spike_metadata=spike_in_df,
+			      n_sample=nrow(mat_metadata))
 	}
 
 	#X <- data.frame(disease=rep(c(rep(0, n_r/2), rep(1, n_r/2)), n_s),

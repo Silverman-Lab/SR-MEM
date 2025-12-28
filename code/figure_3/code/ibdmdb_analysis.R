@@ -2,6 +2,8 @@ library(ALDEx3)
 library(lmerTest)
 library(MASS)
 library(dplyr)
+library(ggplot2)
+library(RTMBdist)
 
 set.seed(54637)
 
@@ -57,6 +59,51 @@ sparsity <- round(rowSums((Y_idb==0)/(ncol(Y_idb)))*100,1)
 log2_mean <- round(apply(log2(Y_idb+0.5), 1, mean),1)
 count_data <- data.frame(sparsity=sparsity, log2_mean=log2_mean)
 write.csv(count_data, "../results/count.stats.csv")
+
+
+##### MEM Modeling #####
+sparsity <- replicate(1000, {
+  pp <- t(rdirmult(length(colSums(Y_idb)), colSums(Y_idb), t(Y_idb+0.5)))
+  colSums(pp==0)
+})
+sparsity_intervals <- apply(
+  sparsity, 1,
+  quantile, probs = c(0.025, 0.5, 0.975)
+)
+df_plot <- data.frame(
+  sample_name = colnames(Y_idb==0),
+  observed = colSums(Y_idb==0),
+  q025 = sparsity_intervals[1, ],
+  q50  = sparsity_intervals[2, ],
+  q975 = sparsity_intervals[3, ]
+)
+df_plot <- df_plot[sample(1:nrow(df_plot), 50), ]
+g <- ggplot(df_plot, aes(y = sample_name)) +
+  # predictive interval
+  geom_errorbar(
+    aes(xmin = q025, xmax = q975),
+    width = 0.2,
+    color = "gray40"
+  ) +
+  # predictive median
+  geom_point(
+    aes(x = q50),
+    size = 2,
+    color = "black"
+  ) +
+  # observed value
+  geom_point(
+    aes(x = observed),
+    color = "red",
+    size = 2
+  ) +
+  labs(
+    y = "Sample Name",
+    x = "Number of zero counts",
+    title = "Sparsity Posterior Predictive IBDMDB Dataset"
+  ) +
+  theme_bw()
+ggsave("../../../supplement/SFigure_7.png", g, units="in", width=6, height=6)
 
 ## Original
 P_idb <- apply(Y_idb, 2, function(col) col/sum(col))
